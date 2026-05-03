@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 小说创作助手</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-left">
+    <h1 class="app-title">AI Novel Writer</h1>
+    <span class="novel-name" id="headerNovelName">未命名作品</span>
+  </div>
+  <div class="header-actions">
+    <span class="zen-indicator">专注模式</span>
+    <button class="btn btn-sm btn-zen" onclick="toggleZenMode()" id="zenModeBtn" title="专注模式 Ctrl+Shift+F">专注</button>
+    <button class="btn btn-sm" onclick="saveNovel()" title="保存 Ctrl+S">保存</button>
+    <button class="btn btn-sm" onclick="exportNovel()" title="导出">导出</button>
+    <button class="btn btn-sm" onclick="importTextFile()" title="导入TXT文件">导入</button>
+    <button class="btn btn-sm" onclick="showSettings()">设置</button>
+    <button class="btn btn-sm" onclick="showShortcuts()" title="快捷键">F1</button>
+  </div>
+</header>
+
+<div class="app-layout">
+  <!-- Left Sidebar -->
+  <aside class="sidebar sidebar-left" id="leftSidebar">
+    <div class="sidebar-section">
+      <div class="section-header" onclick="toggleSection('novel')">
+        <span><span class="collapse-icon" id="collapseIconNovel">&#x25BC;</span> 作品</span>
+        <span>
+          <button class="btn-icon" onclick="event.stopPropagation();showNewNovelDialog()" title="新建作品">+</button>
+          <button class="btn-icon" onclick="event.stopPropagation();showLoadDialog()" title="打开作品">&#x1F4C2;</button>
+        </span>
+      </div>
+      <div class="section-content" id="sectionContentNovel">
+        <input class="novel-title-input" id="novelTitle" placeholder="作品标题" value="未命名作品" onchange="onNovelChange()">
+        <select id="novelGenre" class="novel-genre-select" onchange="onNovelChange()">
+          <option value="">选择类型</option>
+          <option>玄幻</option><option>仙侠</option><option>都市</option>
+          <option>言情</option><option>历史</option><option>科幻</option>
+          <option>悬疑</option><option>轻小说</option><option>其他</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-header" onclick="toggleSection('chapters')">
+        <span><span class="collapse-icon" id="collapseIconChapters">&#x25BC;</span> 章节</span>
+        <button class="btn-icon" onclick="event.stopPropagation();addChapter()" title="添加章节">+</button>
+      </div>
+      <div class="section-content" id="sectionContentChapters">
+        <div class="chapter-list" id="chapterList"></div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-header" onclick="toggleSection('outline')">
+        <span><span class="collapse-icon" id="collapseIconOutline">&#x25BC;</span> 大纲</span>
+        <button class="btn-icon" onclick="event.stopPropagation();showOutlineDialog()" title="编辑大纲">&#x270E;</button>
+      </div>
+      <div class="section-content" id="sectionContentOutline">
+        <div class="outline-summary" id="outlineSummary" onclick="showOutlineDialog()">暂无大纲</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-header" onclick="toggleSection('characters')">
+        <span><span class="collapse-icon" id="collapseIconCharacters">&#x25BC;</span> 角色</span>
+        <button class="btn-icon" onclick="event.stopPropagation();showCharacterDialog()" title="管理角色">&#x270E;</button>
+      </div>
+      <div class="section-content" id="sectionContentCharacters">
+        <div class="character-list" id="characterList"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Editor -->
+  <main class="main-content" id="mainContent">
+    <div class="editor-header">
+      <span class="reading-mode-indicator">&#x25B6; 阅读模式</span>
+      <input class="chapter-title-input" id="chapterTitle" placeholder="章节标题" onchange="onChapterChange()">
+      <div class="chapter-actions">
+        <button class="btn btn-sm" onclick="toggleReadingMode()" id="readingModeBtn" title="阅读模式 Ctrl+R">阅读</button>
+        <button class="btn btn-sm" onclick="moveChapter(-1)" title="上移">&uarr;</button>
+        <button class="btn btn-sm" onclick="moveChapter(1)" title="下移">&darr;</button>
+        <button class="btn btn-sm btn-ghost btn-danger" onclick="deleteChapter()" title="删除章节">&times;</button>
+      </div>
+    </div>
+    <div class="chapter-summary-container">
+      <textarea class="chapter-summary-input" id="chapterSummary" placeholder="章节概要（可选）— 用于AI上下文和快速回顾" oninput="onSummaryChange()"></textarea>
+    </div>
+    <textarea class="editor" id="editor" placeholder="开始写作..." oninput="onChapterChange()"></textarea>
+    <div id="readingContent"><div class="reading-content-text" id="readingContentText"></div></div>
+    <div class="editor-footer">
+      <div class="stats-display">
+        <span id="wordCount">字数: 0</span>
+        <span class="stats-divider">|</span>
+        <span class="stats-item" id="dailyStats">今日写作: <strong>0</strong> 字</span>
+        <span class="stats-divider">|</span>
+        <span class="word-goal-container" id="wordGoalContainer">
+          <span class="word-goal-text" id="wordGoalText">0 / 0</span>
+          <span class="word-goal-bar"><span class="word-goal-fill" id="wordGoalFill" style="width:0%"></span></span>
+        </span>
+      </div>
+      <span class="auto-save-hint" id="saveHint">已保存</span>
+    </div>
+  </main>
+
+  <!-- Right Sidebar - AI Assistant -->
+  <aside class="sidebar sidebar-right" id="rightSidebar">
+    <div class="sidebar-section">
+      <div class="section-header">
+        <span>AI 写作助手</span>
+      </div>
+
+      <div class="ai-mode-select">
+        <select id="aiMode" class="ai-mode-select-input">
+          <option value="continue">续写</option>
+          <option value="expand">扩写</option>
+          <option value="rewrite">改写</option>
+          <option value="free">自由创作</option>
+          <option value="brainstorm">头脑风暴</option>
+          <option value="outline">规划大纲</option>
+        </select>
+      </div>
+
+      <div class="ai-context-hint" id="aiContextHint">
+        <small id="aiContextHintText">将使用当前章节内容作为上下文</small>
+      </div>
+
+      <div class="prompt-templates" id="promptTemplates"></div>
+
+      <textarea class="ai-prompt" id="aiPrompt" placeholder="输入创作提示...&#10;例如：描写主角第一次进入魔法学院时的场景" rows="4" oninput="updateTokenEstimate()"></textarea>
+
+      <div id="tokenEstimate" class="token-estimate" style="display:none">上下文约 <strong>0</strong> tokens</div>
+
+      <button class="btn btn-primary btn-block" onclick="generateAI()" id="aiGenerateBtn">
+        开始创作
+      </button>
+
+      <div class="ai-actions">
+        <button class="btn btn-sm" onclick="clearAIResponse()">清除</button>
+        <button class="btn btn-sm" onclick="insertToEditor()">插入光标</button>
+        <button class="btn btn-sm" onclick="replaceSelection()">替换选中</button>
+        <button class="btn btn-sm" onclick="appendToEditor()">追加结尾</button>
+      </div>
+
+      <div class="ai-response" id="aiResponse">
+        <div class="ai-placeholder">AI 生成的内容将显示在这里...</div>
+      </div>
+
+      <div class="custom-templates-section">
+        <div class="section-header" style="margin-top:10px;margin-bottom:6px">
+          <span>我的提示模板</span>
+          <button class="btn-icon" onclick="showSaveTemplateDialog()" title="保存当前提示">+</button>
+        </div>
+        <div class="custom-templates-list" id="customTemplatesList">
+          <div style="color:var(--text3);font-size:12px;padding:4px 0">暂无自定义模板</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- New Novel Dialog -->
+<div class="modal-overlay hidden" id="newNovelOverlay" onclick="closeModal('newNovelOverlay')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>新建作品</h2>
+    <input class="modal-input" id="newNovelTitle" placeholder="作品标题">
+    <select class="modal-input" id="newNovelGenre">
+      <option value="">选择类型</option>
+      <option>玄幻</option><option>仙侠</option><option>都市</option>
+      <option>言情</option><option>历史</option><option>科幻</option>
+      <option>悬疑</option><option>轻小说</option><option>其他</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('newNovelOverlay')">取消</button>
+      <button class="btn btn-primary" onclick="createNewNovel()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- Load Dialog -->
+<div class="modal-overlay hidden" id="loadOverlay" onclick="closeModal('loadOverlay')">
+  <div class="modal modal-wide" onclick="event.stopPropagation()">
+    <h2>打开作品</h2>
+    <div id="novelList" class="novel-list"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('loadOverlay')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Dialog -->
+<div class="modal-overlay hidden" id="settingsOverlay" onclick="closeModal('settingsOverlay')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>设置</h2>
+    <label class="modal-label" id="apiKeyLabel">API Key</label>
+    <input class="modal-input" id="apiKey" type="password" placeholder="sk-...">
+    <label class="modal-label">AI 供应商</label>
+    <select class="modal-input" id="aiProvider" onchange="onProviderChange()">
+      <option value="deepseek">DeepSeek</option>
+      <option value="openai">OpenAI</option>
+      <option value="freeai">FreeAI</option>
+      <option value="claude">Claude (Anthropic)</option>
+    </select>
+    <label class="modal-label">模型名称</label>
+    <input class="modal-input" id="apiModel" value="deepseek-chat" placeholder="deepseek-chat" list="modelList">
+    <datalist id="modelList"></datalist>
+    <p class="modal-hint" id="providerHint">DeepSeek v4 Flash 对应模型: <strong>deepseek-chat</strong></p>
+
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
+      <label class="modal-label">AI 参数</label>
+      <div class="setting-row">
+        <label>温度 (Temperature)</label>
+        <input type="range" id="aiTemperature" min="0" max="2" step="0.05" value="0.85" oninput="updateRangeDisplay(this,'tempDisplay')">
+        <span class="range-value" id="tempDisplay">0.85</span>
+      </div>
+      <div class="setting-row">
+        <label>最大 Token</label>
+        <input type="number" id="aiMaxTokens" min="256" max="32768" step="256" value="4096">
+      </div>
+      <div class="setting-row">
+        <label>日写作目标</label>
+        <input type="number" id="dailyWordGoal" min="100" max="50000" step="100" value="2000" class="modal-input" style="width:110px;flex:none">
+        <span style="font-size:12px;color:var(--text3)">字</span>
+      </div>
+    </div>
+
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px">
+      <label class="modal-label">AI 上下文设置</label>
+      <label class="setting-checkbox">
+        <input type="checkbox" id="includeCharacters" checked>
+        包含角色设定信息
+      </label>
+      <label class="setting-checkbox">
+        <input type="checkbox" id="includeOutline" checked>
+        包含故事大纲信息
+      </label>
+      <label class="setting-checkbox">
+        <input type="checkbox" id="includeSummaries">
+        包含各章节概要
+      </label>
+    </div>
+
+    <p class="modal-hint">获取 API Key: <a href="https://platform.deepseek.com" target="_blank">platform.deepseek.com</a></p>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('settingsOverlay')">取消</button>
+      <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Outline Dialog -->
+<div class="modal-overlay hidden" id="outlineOverlay" onclick="closeModal('outlineOverlay')">
+  <div class="modal modal-wide" onclick="event.stopPropagation()">
+    <h2>大纲管理</h2>
+    <div class="outline-editor" id="outlineEditor"></div>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button class="btn btn-sm" onclick="addOutlineItem('act')">+ 添加幕</button>
+      <button class="btn btn-sm" onclick="addOutlineItem('arc')">+ 添加剧情弧</button>
+      <button class="btn btn-sm" onclick="addOutlineItem('chapter_outline')">+ 添加章节大纲</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('outlineOverlay')">完成</button>
+    </div>
+  </div>
+</div>
+
+<!-- Keyboard Shortcuts Dialog -->
+<div class="modal-overlay hidden" id="shortcutsOverlay" onclick="closeModal('shortcutsOverlay')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>快捷键</h2>
+    <div class="shortcuts-grid">
+      <span class="shortcut-key">Ctrl+S</span>
+      <span class="shortcut-desc">保存作品</span>
+      <span class="shortcut-key">Ctrl+Enter</span>
+      <span class="shortcut-desc">AI 生成内容</span>
+      <span class="shortcut-key">Ctrl+R</span>
+      <span class="shortcut-desc">切换阅读模式</span>
+      <span class="shortcut-key">Ctrl+Shift+N</span>
+      <span class="shortcut-desc">添加新章节</span>
+      <span class="shortcut-key">Ctrl+Shift+F</span>
+      <span class="shortcut-desc">切换专注模式</span>
+      <span class="shortcut-key">Esc</span>
+      <span class="shortcut-desc">退出阅读模式 / 关闭弹窗</span>
+      <span class="shortcut-key">F1</span>
+      <span class="shortcut-desc">显示此帮助</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('shortcutsOverlay')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Save Template Dialog -->
+<div class="modal-overlay hidden" id="saveTemplateOverlay" onclick="closeModal('saveTemplateOverlay')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>保存提示模板</h2>
+    <label class="modal-label">模板名称</label>
+    <input class="modal-input" id="templateNameInput" placeholder="给模板取个名字...">
+    <label class="modal-label">提示内容</label>
+    <textarea class="modal-input" id="templatePromptInput" rows="4" placeholder="提示内容..." style="resize:vertical;min-height:80px;font-family:var(--font);line-height:1.6"></textarea>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('saveTemplateOverlay')">取消</button>
+      <button class="btn btn-primary" onclick="saveCustomTemplate()">保存</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" accept=".txt" id="importFileInput" class="import-input-hidden" onchange="onFileImported(event)">
+<script src="/static/script.js"></script>
+</body>
+</html>
