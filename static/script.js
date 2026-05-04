@@ -10,6 +10,8 @@ let novel = {
 
 let currentChapterIndex = 0;
 let autoSaveTimer = null;
+let saveInProgress = false;
+let savePending = false;
 let isStreaming = false;
 let readingMode = false;
 let collapsedSections = {};
@@ -578,19 +580,22 @@ function scheduleAutoSave() {
   const hint = document.getElementById("saveHint");
   if (hint) { hint.textContent = "未保存"; hint.style.color = "var(--warning)"; }
   clearTimeout(autoSaveTimer);
-  autoSaveTimer = setTimeout(saveNovel, 2000);
+  autoSaveTimer = setTimeout(() => {
+    if (saveInProgress) { savePending = true; }
+    else { saveNovel(); }
+  }, 2000);
 }
 
 function saveNovel() {
+  if (saveInProgress) { savePending = true; return; }
+  saveInProgress = true;
   saveCurrentChapter();
   trackWritingSession();
-  // Clean up chapters data for saving
-  const saveData = JSON.parse(JSON.stringify(novel));
-  saveData.title = document.getElementById("novelTitle").value || "未命名作品";
+  novel.title = document.getElementById("novelTitle").value || "未命名作品";
   fetch("/api/novel/save", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(saveData),
+    body: JSON.stringify(novel),
   }).then(r => r.json()).then(() => {
     const hint = document.getElementById("saveHint");
     if (hint) { hint.textContent = "已保存"; hint.style.color = "var(--success)"; }
@@ -598,6 +603,9 @@ function saveNovel() {
   }).catch(() => {
     const hint = document.getElementById("saveHint");
     if (hint) { hint.textContent = "保存失败"; hint.style.color = "var(--danger)"; }
+  }).finally(() => {
+    saveInProgress = false;
+    if (savePending) { savePending = false; saveNovel(); }
   });
 }
 

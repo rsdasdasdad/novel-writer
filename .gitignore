@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 .env
 novels/
+dist/
+build/
+*.spec
+*.exe
+*.zip

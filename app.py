@@ -1,12 +1,61 @@
 import os
+import sys
 import json
 import time
 import requests
 from flask import Flask, render_template, request, jsonify
 
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(__file__)
+
 app = Flask(__name__)
-NOVELS_DIR = os.path.join(os.path.dirname(__file__), "novels")
+NOVELS_DIR = os.path.join(BASE_DIR, "novels")
+NOVELS_INDEX = os.path.join(NOVELS_DIR, "_index.json")
 os.makedirs(NOVELS_DIR, exist_ok=True)
+
+
+def rebuild_index():
+    """Rebuild novel cache index from all novel files."""
+    index = {}
+    for fn in os.listdir(NOVELS_DIR):
+        if fn.endswith(".json") and fn != "_index.json":
+            path = os.path.join(NOVELS_DIR, fn)
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                index[fn] = {
+                    "title": data.get("title", fn.replace(".json", "")),
+                    "chapters": len(data.get("chapters", [])),
+                    "updated": os.path.getmtime(path),
+                }
+            except (json.JSONDecodeError, OSError):
+                pass
+    with open(NOVELS_INDEX, "w", encoding="utf-8") as f:
+        json.dump(index, f, ensure_ascii=False)
+    return index
+
+
+def _update_index_entry(fn, title, chapters, mtime):
+    """Add or update a single entry in the cache index."""
+    index = {}
+    if os.path.exists(NOVELS_INDEX):
+        with open(NOVELS_INDEX, "r", encoding="utf-8") as f:
+            index = json.load(f)
+    index[fn] = {"title": title, "chapters": chapters, "updated": mtime}
+    with open(NOVELS_INDEX, "w", encoding="utf-8") as f:
+        json.dump(index, f, ensure_ascii=False)
+
+
+def _remove_index_entry(fn):
+    """Remove a single entry from the cache index."""
+    if os.path.exists(NOVELS_INDEX):
+        with open(NOVELS_INDEX, "r", encoding="utf-8") as f:
+            index = json.load(f)
+        index.pop(fn, None)
+        with open(NOVELS_INDEX, "w", encoding="utf-8") as f:
+            json.dump(index, f, ensure_ascii=False)
 
 AI_PROVIDERS = {
     "deepseek": {
@@ -49,6 +98,13 @@ def save_novel(data):
     path = novel_path(data.get("title", "untitled"))
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    fn = os.path.basename(path)
+    _update_index_entry(
+        fn,
+        title=data.get("title", fn.replace(".json", "")),
+        chapters=len(data.get("chapters", [])),
+        mtime=os.path.getmtime(path),
+    )
     return path
 
 
@@ -61,18 +117,12 @@ def index():
 
 @app.route("/api/novels", methods=["GET"])
 def list_novels():
-    novels = []
-    for fn in os.listdir(NOVELS_DIR):
-        if fn.endswith(".json"):
-            path = os.path.join(NOVELS_DIR, fn)
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                novels.append({
-                    "title": data.get("title", fn.replace(".json", "")),
-                    "chapters": len(data.get("chapters", [])),
-                    "updated": os.path.getmtime(path),
-                })
-    novels.sort(key=lambda n: n["updated"], reverse=True)
+    if os.path.exists(NOVELS_INDEX):
+        with open(NOVELS_INDEX, "r", encoding="utf-8") as f:
+            index = json.load(f)
+    else:
+        index = rebuild_index()
+    novels = sorted(index.values(), key=lambda n: n["updated"], reverse=True)
     return jsonify(novels)
 
 
@@ -98,6 +148,7 @@ def delete_novel(title):
     path = novel_path(title)
     if os.path.exists(path):
         os.remove(path)
+        _remove_index_entry(os.path.basename(path))
         return jsonify({"status": "ok"})
     return jsonify({"error": "Not found"}), 404
 
@@ -243,7 +294,6 @@ def stream_claude(payload, api_key):
             yield f"data: {json.dumps({'error': f'API错误 ({resp.status_code}): {error_detail}'})}\n\n"
             return
 
-        current_block_text = ""
         for line in resp.iter_lines():
             if line:
                 decoded = line.decode("utf-8")
@@ -256,7 +306,6 @@ def stream_claude(payload, api_key):
                             delta = obj.get("delta", {})
                             text = delta.get("text", "")
                             if text:
-                                current_block_text += text
                                 yield f"data: {json.dumps({'content': text})}\n\n"
                         elif evt_type == "message_stop":
                             break
